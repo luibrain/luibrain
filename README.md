@@ -1,2 +1,2 @@
-# luibrain
-R-studio (SUM)
+# R-Studio (SUM)
+Первая лабораторная работа
