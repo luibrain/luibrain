@@ -1,2 +1,3 @@
 # R-studio (SUM)
-Laba 1 - первая лабораторная работа
+Look at branches to find laboratory works.
+LABA 1 - первая лабораторная работа
