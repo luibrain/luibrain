@@ -1,0 +1,262 @@
+---
+title: "LABA5"
+author: "Semin A.S."
+date: '23 марта 2018 г '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# КРОСС-ВАЛИДАЦИЯ И БУТСТРЕП
+
+В этой работе мы будем оценивать точность моделей, используя следующие методы:
+
+- метод проверочной выборки
+
+- метод перекрёстной проверки по отдельным наблюдениям (LOOCV)
+
+- метод k-кратной перекрёстной проверки
+
+- бутстреп
+
+
+Модели: линейная регрессия.
+
+
+Данные: Carseats {ISLR}
+
+Зависимая переменная - Sales
+
+
+Объясняющие переменные:
+
+ - непрерывные(Price, Advertising)
+ 
+ - дискретные(Urban)
+ 
+
+Будем рассматривать 2 линейных регрессии:
+
+ - Sales ~ Advertising + Price + Urban
+ 
+ - Sales ~ Advertising + Price
+ 
+
+Начнем с анализа модели со всеми объясняющими переменными.
+
+# Метод проверочной выборки
+
+
+```{r, echo=FALSE}
+library('ISLR')              # набор данных Auto
+library('GGally')            # матричные графики
+library('boot')              # расчёт ошибки с кросс-валидацией
+
+my.seed <- 1
+Carseats <- Carseats[,-2]
+Carseats <- Carseats[,-2]
+Carseats <- Carseats[,-3]
+Carseats <- Carseats[,-4]
+Carseats <- Carseats[,-4]
+Carseats <- Carseats[,-4]
+Carseats <- Carseats[,-5]
+
+
+# общее число наблюдений
+n <- nrow(Carseats)
+
+# доля обучающей выборки
+train.percent <- 0.5
+
+# выбрать наблюдения в обучающую выборку
+set.seed(my.seed)
+inTrain <- sample(n, n * train.percent)
+
+# присоединить таблицу с данными: названия стоблцов будут доступны напрямую
+attach(Carseats)
+# подгонка линейной модели на обучающей выборке
+fit.lm.1 <- lm(Sales ~ Advertising + Price + Urban, 
+               subset = inTrain)
+# считаем MSE на тестовой выборке
+mean((Sales[-inTrain] - predict(fit.lm.1,
+                              Carseats[-inTrain, ]))^2)
+# отсоединить таблицу с данными
+detach(Carseats)
+```
+
+# Перекрёстная проверка по отдельным наблюдениям (LOOCV)
+
+```{r, echo=FALSE}
+# подгонка линейной модели на обучающей выборке
+fit.glm <- glm(Sales ~ Advertising + Price + Urban, data = Carseats)
+# считаем LOOCV-ошибку
+cv.err <- cv.glm(Carseats, fit.glm)
+# результат: первое число -- по формуле LOOCV-ошибки,
+#  второе -- с поправкой на смещение
+cv.err$delta[1]
+# вектор с LOOCV-ошибками
+cv.err.loocv <- rep(0, 5)
+names(cv.err.loocv) <- 1:5
+# цикл по степеням полиномов
+for (i in 1:5){
+  fit.glm <- glm(Sales ~ poly(Advertising, i) + poly(Price, i) + Urban, data = Carseats)
+  cv.err.loocv[i] <- cv.glm(Carseats, fit.glm)$delta[1]
+}
+# результат
+cv.err.loocv
+```
+
+# k-кратная перекрёстная проверка
+```{r, echo=FALSE}
+# оценим точность полиномиальных моделей, меняя степень
+# вектор с ошибками по 10-кратной кросс-валидации
+cv.err.k.fold1 <- rep(0, 5)
+names(cv.err.k.fold1) <- 1:5
+# цикл по степеням полиномов
+for (i in 1:5){
+  fit.glm <- glm(Sales ~ poly(Advertising, i) + poly(Price, i) + Urban, data = Carseats)
+  cv.err.k.fold1[i] <- cv.glm(Carseats, fit.glm,
+                             K = 5)$delta[1]
+}
+# результат
+cv.err.k.fold1
+
+cv.err.k.fold2 <- rep(0, 5)
+names(cv.err.k.fold2) <- 1:5
+# цикл по степеням полиномов
+for (i in 1:5){
+  fit.glm <- glm(Sales ~ poly(Advertising, i) + poly(Price, i) + Urban, data = Carseats)
+  cv.err.k.fold2[i] <- cv.glm(Carseats, fit.glm,
+                              K = 10)$delta[1]
+}
+# результат
+cv.err.k.fold2
+```
+
+Запомним ошибки модели, чтобы сравнить теперь с другой, немного измененной.
+
+# Метод проверочной выборки
+
+
+```{r, echo=FALSE}
+# присоединить таблицу с данными: названия стоблцов будут доступны напрямую
+attach(Carseats)
+# подгонка линейной модели на обучающей выборке
+fit.lm.1 <- lm(Sales ~ Advertising + Price, 
+               subset = inTrain)
+# считаем MSE на тестовой выборке
+mean((Sales[-inTrain] - predict(fit.lm.1,
+                                Carseats[-inTrain, ]))^2)
+# отсоединить таблицу с данными
+detach(Carseats)
+```
+
+# Перекрёстная проверка по отдельным наблюдениям (LOOCV)
+
+```{r, echo=FALSE}
+# подгонка линейной модели на обучающей выборке
+fit.glm <- glm(Sales ~ Advertising + Price, data = Carseats)
+# считаем LOOCV-ошибку
+cv.err <- cv.glm(Carseats, fit.glm)
+# результат: первое число -- по формуле LOOCV-ошибки,
+#  второе -- с поправкой на смещение
+cv.err$delta[1]
+# вектор с LOOCV-ошибками
+cv.err.loocv <- rep(0, 5)
+names(cv.err.loocv) <- 1:5
+# цикл по степеням полиномов
+for (i in 1:5){
+  fit.glm <- glm(Sales ~ poly(Advertising, i) + poly(Price, i), data = Carseats)
+  cv.err.loocv[i] <- cv.glm(Carseats, fit.glm)$delta[1]
+}
+# результат
+cv.err.loocv
+```
+
+# k-кратная перекрёстная проверка
+```{r, echo=FALSE}
+# оценим точность полиномиальных моделей, меняя степень
+# вектор с ошибками по 10-кратной кросс-валидации
+cv.err.k.fold1 <- rep(0, 5)
+names(cv.err.k.fold1) <- 1:5
+# цикл по степеням полиномов
+for (i in 1:5){
+  fit.glm <- glm(Sales ~ poly(Advertising, i) + poly(Price, i), data = Carseats)
+  cv.err.k.fold1[i] <- cv.glm(Carseats, fit.glm,
+                              K = 5)$delta[1]
+}
+# результат
+cv.err.k.fold1
+
+cv.err.k.fold2 <- rep(0, 5)
+names(cv.err.k.fold2) <- 1:5
+# цикл по степеням полиномов
+for (i in 1:5){
+  fit.glm <- glm(Sales ~ poly(Advertising, i) + poly(Price, i), data = Carseats)
+  cv.err.k.fold2[i] <- cv.glm(Carseats, fit.glm,
+                              K = 10)$delta[1]
+}
+# результат
+cv.err.k.fold2
+```
+
+В 3 из 4 случаях, ошибки меньше во 2 модели(только с непрерывными объясняющими переменными), поэтому будет логично выбрать ее.
+
+Стоит отметить, что методы не дают нам совпадений в расчетах, но все они очень приближены друг к другу.
+
+# Метод бутстрепа для 1 модели.
+
+```{r, echo=FALSE}
+# Оценивание точности линейной регрессионной модели ----------------------------
+
+# оценить стандартные ошибки параметров модели 
+#  сравнить с оценками ошибок по МНК
+
+# функция для расчёта коэффициентов ПЛР по выборке из данных
+boot.fn <- function(data, index){
+  coef(lm(Sales ~ Advertising + Price + Urban, data = data, subset = index))
+}
+boot.fn(Carseats, 1:n)
+
+# пример применения функции к бутстреп-выборке
+set.seed(my.seed)
+boot.fn(Carseats, sample(n, n, replace = T))
+
+# применяем функцию boot для вычисления стандартных ошибок параметров
+#  (1000 выборок с повторами)
+boot(Carseats, boot.fn, 1000)
+
+# сравним с МНК
+attach(Carseats)
+summary(lm(Sales ~ Advertising + Price + Urban))$coef
+
+detach(Carseats)
+```
+
+
+# Метод бутстрепа для 2 модели.
+
+```{r,echo=FALSE}
+boot.fn <- function(data, index){
+  coef(lm(Sales ~ Advertising + Price, data = data, subset = index))
+}
+boot.fn(Carseats, 1:n)
+
+# пример применения функции к бутстреп-выборке
+set.seed(my.seed)
+boot.fn(Carseats, sample(n, n, replace = T))
+
+# применяем функцию boot для вычисления стандартных ошибок параметров
+#  (1000 выборок с повторами)
+boot(Carseats, boot.fn, 1000)
+
+# сравним с МНК
+attach(Carseats)
+summary(lm(Sales ~ Advertising + Price))$coef
+
+detach(Carseats)
+```
+
+
+Бутстреп нам показывает, что в 2 исследуемых моделях регрессоры являются значимыми так же, как и в МНК. Также если посмотреть на столбец под названием "std. error" в бутстреп-выборке, а потом на столбец "Std. Error" в МНК, то мы можем заметить, что оценки почти совпадают, что говорит о надежности использования метода бутстреп, по крайней мере, в данном случае. 
