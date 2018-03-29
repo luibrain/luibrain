@@ -1,0 +1,185 @@
+---
+title: "laba6"
+author: "Semin A.S."
+date: '29 марта 2018 г '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# РЕГУЛЯРИЗАЦИЯ ЛИНЕЙНЫХ МОДЕЛЕЙ
+
+В практических примерах ниже показано:
+
+ - отобрать предикторы методами пошагового включения
+ 
+ - как построить ридж-регрессию
+
+ - как применять эти методы в сочетании с кросс-валидацией
+ 
+Модели: линейная регрессия, ридж.
+
+Данные: Carseats {ISLR}
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library('ISLR') # набор данных
+library('leaps') # функция regsubset() — отбор оптимального 
+# подмножества переменных
+library('glmnet') # функция glmnet() — лассо
+library('pls') # регрессия на главные компоненты — pcr()
+# и частный МНК — plsr()
+
+my.seed <- 1
+names(Carseats)
+```
+
+# Пошаговое включение
+
+```{r}
+regfit.fwd <- regsubsets(Sales ~ ., data = Carseats,
+                         nvmax = 10, method = 'forward')
+summary(regfit.fwd)
+round(coef(regfit.fwd, 10), 3)
+```
+
+# k-кратная кросс-валидация
+
+```{r}
+# отбираем 10 блоков наблюдений
+k <- 10
+set.seed(my.seed)
+folds <- sample(1:k, nrow(Carseats), replace = T)
+# заготовка под матрицу с ошибками
+cv.errors <- matrix(NA, k, 10, dimnames = list(NULL, paste(1:10)))
+predict.regsubsets = function(object, newdata, id, ...) {
+  form = as.formula(object$call[[2]])
+  mat = model.matrix(form, newdata)
+  coefi = coef(object, id = id)
+  mat[, names(coefi)] %*% coefi
+}
+# заполняем матрицу в цикле по блокам данных
+for (j in 1:k){
+  best.fit <- regsubsets(Sales ~ ., data = Carseats[folds != j, ],
+                         nvmax = 10)
+  # теперь цикл по количеству объясняющих переменных
+  for (i in 1:10){
+    # модельные значения Sales
+    pred <- predict(best.fit, Carseats[folds == j, ], id = i)
+    # вписываем ошибку в матрицу
+    cv.errors[j, i] <- mean((Carseats$Sales[folds == j] - pred)^2)
+  }
+}
+# усредняем матрицу по каждому столбцу (т.е. по блокам наблюдений), 
+#  чтобы получить оценку MSE для каждой модели с фиксированным 
+#  количеством объясняющих переменных
+mean.cv.errors <- apply(cv.errors, 2, mean)
+round(mean.cv.errors, 2)
+# на графике
+plot(mean.cv.errors, type = 'b')
+points(which.min(mean.cv.errors), mean.cv.errors[which.min(mean.cv.errors)],
+       col = 'red', pch = 20, cex = 2)
+# перестраиваем модель с 7 объясняющими переменными на всём наборе данных
+reg.best <- regsubsets(Sales ~ ., data = Carseats, nvmax = 10)
+round(coef(reg.best, 7), 3)
+```
+
+K-кратная кросс-валидация показала, что наименьшая ошибка выходит, если предикторов 7 штук, поэтому на модели, не считая константы, мы наблюдаем 7 регрессов вместо 10.
+
+# MSE модели на тестовой выборке
+```{r, echo=FALSE}
+set.seed(my.seed)
+train <- sample(c(T, F), nrow(Carseats), rep = T)
+test <- !train
+# обучаем модели
+regfit.best <- regsubsets(Sales ~ ., data = Carseats[train, ],
+                          nvmax = 10)
+# матрица объясняющих переменных модели для тестовой выборки
+test.mat <- model.matrix(Sales ~ ., data = Carseats[test, ])
+# вектор ошибок
+val.errors <- rep(NA, 10)
+# цикл по количеству предикторов
+for (i in 1:10){
+  coefi <- coef(regfit.best, id = i)
+  pred <- test.mat[, names(coefi)] %*% coefi
+  # записываем значение MSE на тестовой выборке в вектор
+  val.errors[i] <- mean((Carseats$Sales[test] - pred)^2)
+}
+round(val.errors, 2)
+```
+
+# Гребневая регрессия
+
+```{r}
+# из-за синтаксиса glmnet() формируем явно матрицу объясняющих...
+x <- model.matrix(Sales ~ ., Carseats)[, -1]
+
+# и вектор значений зависимой переменной
+y <- Carseats$Sales
+# вектор значений гиперпараметра лямбда
+grid <- 10^seq(10, -2, length = 100)
+
+# подгоняем серию моделей ридж-регрессии
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid)
+
+# размерность матрицы коэффициентов моделей
+dim(coef(ridge.mod))
+# значение лямбда под номером 50
+round(ridge.mod$lambda[50], 2)
+# коэффициенты соответствующей модели
+round(coef(ridge.mod)[, 50], 3)
+# норма эль-два
+round(sqrt(sum(coef(ridge.mod)[-1, 50]^2)), 2)
+# всё то же для лямбды под номером 60
+# значение лямбда под номером 60
+round(ridge.mod$lambda[60], 2)
+# коэффициенты соответствующей модели
+round(coef(ridge.mod)[, 60], 3)
+# норма эль-два
+round(sqrt(sum(coef(ridge.mod)[-1, 60]^2)), 2)
+# мы можем получить значения коэффициентов для новой лямбды
+round(predict(ridge.mod, s = 50, type = 'coefficients')[1:12, ], 3)
+set.seed(my.seed)
+train <- sample(1:nrow(x), nrow(x)/2)
+test <- -train
+y.test <- y[test]
+
+# подгоняем ридж-модели с большей точностью (thresh ниже значения по умолчанию)
+ridge.mod <- glmnet(x[train, ], y[train], alpha = 0, lambda = grid,
+                    thresh = 1e-12)
+plot(ridge.mod)
+# прогнозы для модели с лямбда = 4
+ridge.pred <- predict(ridge.mod, s = 4, newx = x[test, ])
+round(mean((ridge.pred - y.test)^2), 2)
+# сравним с MSE для нулевой модели (прогноз = среднее)
+round(mean((mean(y[train]) - y.test)^2), 2)
+# насколько модель с лямбда = 4 отличается от обычной ПЛР
+ridge.pred <- predict(ridge.mod, s = 0, newx = x[test, ], exact = T,
+                      x = x[train, ], y = y[train])
+round(mean((ridge.pred - y.test)^2), 2)
+# predict с лямбдой (s) = 0 даёт модель ПЛР
+lm(y ~ x, subset = train)
+round(predict(ridge.mod, s = 0, exact = T, type = 'coefficients',
+              x = x[train, ], y = y[train])[1:12, ], 3)
+# k-кратная кросс-валидация
+set.seed(my.seed)
+# оценка ошибки
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 0)
+plot(cv.out)
+# значение лямбда, обеспечивающее минимальную ошибку перекрёстной проверки
+bestlam <- cv.out$lambda.min
+round(bestlam, 2)
+# MSE на тестовой для этого значения лямбды
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ])
+val.lam <- mean((ridge.pred - y.test)^2)
+round(val.lam, 2)
+# наконец, подгоняем модель для оптимальной лямбды, 
+#  найденной по перекрёстной проверке
+out <- glmnet(x, y, alpha = 0)
+round(predict(out, type = 'coefficients', s = bestlam)[1:12, ], 3)
+```
+
+Подведем итог: MSE на тестовой выборке методом пошагового включения равняется 0.95, в то время как, метод гребневой регрессии дал нам результат 1.13.
+
+Поэтому метод пошагового включения в этом случае является наиболее оптимальным.
