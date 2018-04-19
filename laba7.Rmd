@@ -1,0 +1,200 @@
+---
+title: "laba7"
+author: "Semin A.S."
+date: '19 апреля 2018 г '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+library('MASS') # набор данных Boston 
+library('splines') # сплайны 
+library('gam') # обобщённые аддитивные модели 
+library('akima') # график двумерной плоскости 
+library('ggplot2') # красивые графики 
+
+my.seed <- 1 
+attach(Boston) 
+str(Boston) 
+```
+
+Будем работать с переменными crim(количество преступлений) и nox(концентрация оксидов азота).
+
+
+Судя по графику, можно сказать, что данные неоднородны, посмотрев на структуру, убеждаемся, что разброс переменной crim очень высок. Проведем границу на 30.
+
+```{r, echo=FALSE}
+gp <- ggplot(data = Boston, aes(x = nox, y = crim)) 
+gp <- gp + geom_point() + geom_abline(slope = 0, intercept = 30, col = 'red') 
+gp
+```
+
+Получаем регрессионный анализ для полинома 3 степени.
+
+```{r, echo=FALSE}
+fit <- lm(crim ~ poly(nox, 3), data = Boston) 
+round(coef(summary(fit)), 2) 
+round(head(poly(nox, 3)), 3) 
+# можно получить сами значения nox в заданных степенях 
+round(head(poly(nox, 3, raw = T)), 3) 
+# на прогноз не повлияет, но оценки параметров изменяются 
+fit.2 <- lm(crim ~ poly(nox, 3, raw = T), data = Boston) 
+round(coef(summary(fit.2)), 2) 
+
+```
+
+Получаем границы доверительного интервала.
+
+```{r, echo=FALSE}
+# границы изменения переменной nox 
+noxlims <- range(nox) 
+
+# значения nox, для которых делаем прогноз 
+nox.grid <- seq(from = noxlims[1], to = noxlims[2], length.out = 506) 
+
+# рассчитать прогнозы и их стандартные ошибки 
+preds <- predict(fit, newdata = list(nox = nox.grid), se = T) 
+
+# границы доверительного интервала для заработной платы 
+se.bands <- cbind(lower.bound = preds$fit - 2*preds$se.fit, 
+                  upper.bound = preds$fit + 2*preds$se.fit) 
+
+# смотрим результат 
+round(head(se.bands), 2)
+```
+
+Заметно, что график полностью находится в пределах доверительной области.
+
+```{r, echo=FALSE}
+# наблюдения 
+plot(nox, crim, xlim = noxlims, cex = 0.5, col = 'darkgrey') 
+
+# заголовок 
+title('Полином третьей степени') 
+
+# модель 
+lines(nox.grid, preds$fit, lwd = 2, col = 'green') 
+
+# доверительные интервалы прогноза 
+matlines(x = nox.grid, y = se.bands, lwd = 2, col = 'blue', lty = 3) 
+# прогнозы по второму вызову модели
+```
+
+Модель anova говорит нам о том, что полином четвертой степени ухудшает модель, поэтому стоит остановиться на полиноме третьей степени.
+
+```{r, echo=FALSE}
+preds2 <- predict(fit.2, newdata = list(nox = nox.grid), se = T) 
+
+# максимальное расхождение между прогнозами по двум вариантам вызова модели 
+fit.1 <- lm(crim ~ nox, data = Boston) 
+fit.2 <- lm(crim ~ poly(nox, 2), data = Boston) 
+fit.3 <- lm(crim ~ poly(nox, 3), data = Boston) 
+fit.4 <- lm(crim ~ poly(nox, 4), data = Boston) 
+fit.5 <- lm(crim ~ poly(nox, 5), data = Boston) 
+
+round(anova(fit.1, fit.2, fit.3, fit.4, fit.5), 2) 
+fit <- glm(I(crim > 30) ~ poly(nox, 3), data = Boston, family = 'binomial') 
+```
+
+Очень заметен слишком высокий доверительный интервал при минимальных значениях nox, что в очередной раз указывает на неоднородность данных.
+
+```{r, echo=FALSE}
+# прогнозы 
+preds <- predict(fit, newdata = list(nox = nox.grid), se = T) 
+
+# пересчитываем доверительные интервалы и прогнозы в исходные ЕИ 
+pfit <- exp(preds$fit) / (1 + exp(preds$fit)) 
+se.bands.logit <- cbind(lower.bound = preds$fit - 2*preds$se.fit, 
+                        upper.bound = preds$fit + 2*preds$se.fit) 
+se.bands <- exp(se.bands.logit)/(1 + exp(se.bands.logit)) 
+
+# результат - доверительный интервал для вероятности события 
+# "Заработная плата выше 30". 
+round(head(se.bands), 3)
+
+# сетка для графика (изображаем вероятности, поэтому интервал изменения y мал) 
+plot(nox, I(crim > 30), xlim = noxlims, type = 'n', ylim = c(0, 1), 
+     ylab = 'P(Boston > 30 | Age)') 
+
+# фактические наблюдения показываем засечками 
+points(jitter(nox), I(crim > 30), cex = 0.5, pch = '|', col = 'darkgrey') 
+
+# модель 
+lines(nox.grid, pfit, lwd = 2, col = 'blue') 
+
+# доверительные интервалы 
+matlines(nox.grid, se.bands, lwd = 1, col = 'blue', lty = 3) 
+
+# заголовок 
+title('Полином третьей степени')
+```
+
+Теперь построим ступенчатую функцию для нашей модел с учетом P(crim>30). Мы решили поделить на 3 интервала.
+
+```{r, echo=FALSE}
+# нарезаем предиктор nox на 3 равных интервала 
+table(cut(nox, 3)) 
+# подгоняем линейную модель на интервалах 
+fit <- lm(crim ~ cut(nox, 3), data = Boston) 
+round(coef(summary(fit)), 2) 
+# прогноз — это средние по `crim` на каждом интервале 
+preds.cut <- predict(fit, newdata = list(nox = nox.grid), se = T) 
+
+# интервальный прогноз 
+se.bands.cut <- cbind(lower.bound = preds.cut$fit - 2*preds.cut$se.fit, 
+                      upper.bound = preds.cut$fit + 2*preds.cut$se.fit) 
+# наблюдения 
+plot(nox, crim, xlim = noxlims, cex = 0.5, col = 'darkgrey') 
+
+# модель 
+lines(nox.grid, preds.cut$fit, lwd = 2, col = 'darkgreen') 
+
+# доверительные интервалы прогноза 
+matlines(x = nox.grid, y = se.bands.cut, lwd = 1, col = 'darkgreen', lty = 3) 
+
+# заголовок 
+title('Ступенчатая функция') 
+fit <- glm(I(crim > 30) ~ cut(nox, 3), data = Boston, family = 'binomial') 
+```
+
+Теперь построим тот же график с вероятностями. Верхние границы 1-ого и 3-ого интервалов не определены. График показывает, что как раз таким там, где доверительнный интервал отчетливо виден, вероятность преступления гораздо выше, чем в 2 других, отсюда такое закономерное изображение графика.
+
+```{r, echo=FALSE}
+# прогнозы 
+preds <- predict(fit, newdata = list(nox = nox.grid), se = T) 
+
+# пересчитываем доверительные интервалы и прогнозы в исходные ЕИ
+pfit <- 
+  exp(preds$fit) / (1 + exp(preds$fit)) 
+se.bands.logit <- cbind(lower.bound = preds$fit - 2*preds$se.fit, 
+                        upper.bound = preds$fit + 2*preds$se.fit) 
+se.bands <- exp(se.bands.logit)/(1 + exp(se.bands.logit)) 
+
+# результат - доверительный интервал для вероятности события 
+# "Заработная плата выше 30". 
+round(head(se.bands), 3) 
+# сетка для графика (изображаем вероятности, поэтому интервал изменения y мал) 
+plot(nox, I(crim > 30), xlim = noxlims, type = 'n', ylim = c(0, 0.2), 
+     ylab = 'P(Boston > 30 | Age)') 
+
+# фактические наблюдения показываем засечками 
+points(jitter(nox), I(crim > 30)/5, cex = 0.5, pch = '|', col = 'darkgrey') 
+
+# модель 
+lines(nox.grid, pfit, lwd = 2, col = 'darkgreen') 
+
+# доверительные интервалы 
+matlines(nox.grid, se.bands, lwd = 1, col = 'darkgreen', lty = 3) 
+
+# заголовок 
+title('Ступенчатая функция') 
+
+
+
+detach(Boston)
+```
+
+Как итог, я считаю, что не стоит работать с этой моделью, пока мы не сократим выборку, либо будем брать ее на отдельных интервалах, также можно попробовать избавиться от аномальных значений.
