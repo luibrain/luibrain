@@ -1,0 +1,151 @@
+---
+title: "laba9"
+author: "Semin A.S."
+date: '26 апреля 2018 г '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Модели: SVM
+Данные: Auto {ISLR}
+
+Зависимая переменная: high.mpg.
+Объясняющие переменные: weight, horsepower.
+
+
+# Классификатор на опорных векторах
+
+
+```{r, echo=FALSE}
+library('e1071')     # SVM
+library('ROCR')      # ROC-кривые
+library('ISLR')      # данные по экспрессии генов
+
+# Классификатор на опорных векторах --------------------------------------------
+
+# сгенерированные данные: два линейно неразделимых класса ======================
+
+# создаём наблюдения
+set.seed(9)
+attach(Auto)
+# новая переменная
+high.mpg <- ifelse(mpg < 23, 'No', 'Yes')
+high.mpg <- as.factor(high.mpg)
+
+# присоединяем к таблице данных
+Auto <- data.frame(Auto, high.mpg)
+x <- matrix(weight + horsepower, ncol = 2)
+y <- high.mpg
+# данные не разделяются линейно
+plot(x, pch = 20, col = y)
+
+# таблица с данными, отклик -- фактор
+dat <- data.frame(x = x, y = y)
+# классификатор на опорных векторах с линейной границей
+svmfit <- svm(y ~ ., data = dat, kernel = "linear", cost = 10, scale = FALSE)
+# на графике опорные наблюдения показаны крестиками
+plot(svmfit, dat)
+# список опорных векторов
+svmfit$index
+# сводка по модели
+summary(svmfit)
+
+# уменьшаем штрафной параметр
+svmfit <- svm(y ~ ., data = dat, kernel = "linear", cost = 0.1, scale = FALSE)
+plot(svmfit, dat)
+svmfit$index
+
+# делаем перекрёстную проверку, изменяя штраф (аргумент cost)
+tune.out <- tune(svm, y ~ ., data = dat, kernel = "linear",
+                 ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+summary(tune.out)
+```
+
+Лучшая модель - cost = 0.01.
+
+```{r, echo=FALSE}
+# лучшая модель -- с минимальной ошибкой
+bestmod <- tune.out$best.model
+summary(bestmod)
+
+# генерируем контрольные данные
+
+testdat <- data.frame(x = x, y = y)
+# делаем прогноз по лучшей модели
+ypred <- predict(bestmod, testdat)
+# матрица неточностей
+table(predict = ypred, truth = testdat$y)
+
+# прогноз по модели с cost = 0.01
+svmfit <- svm(y ~ ., data = dat, kernel = "linear", cost = .01, scale = FALSE)
+ypred <- predict(svmfit, testdat)
+# матрица неточностей
+table(predict = ypred, truth = testdat$y)
+acc.test <- (137+149)/(137+149+47+59)
+acc.test
+```
+
+Точность модели составила 0.7295918. Высокая, но недостаточная.
+
+```{r, echo=FALSE}
+# сгенерированные данные: два линейно разделимых класса ========================
+
+# создаём наблюдения
+
+plot(x/2, col = y, pch = 20)
+
+# таблица с данными, отклик -- фактор
+dat <- data.frame(x = x, y = y)
+# очень большой cost (маленький зазор, высокая точность классификации)
+svmfit <- svm(y ~ ., data = dat, kernel = "linear", cost = 1e5)
+summary(svmfit)
+plot(svmfit, dat)
+svmfit <- svm(y ~ ., data = dat, kernel = "linear", cost = 1)
+summary(svmfit)
+plot(svmfit,dat)
+```
+
+
+```{r, echo=FALSE}
+# ROC-кривые -------------------------------------------------------------------
+
+# функция построения ROC-кривой: pred -- прогноз, truth -- факт
+rocplot <- function(pred, truth, ...){
+  predob = prediction(pred, truth)
+  perf = performance(predob, "tpr", "fpr")
+  plot(perf,...)}
+
+train <- sample(1:nrow(Auto), 196)
+# последняя оптимальная модель
+svmfit.opt <- svm(y ~ ., data = dat[train, ], 
+                  kernel = "radial", gamma = 2, cost = 1, decision.values = T)
+# количественные модельные значения, на основе которых присваивается класс
+fitted <- attributes(predict(svmfit.opt, dat[train, ],
+                             decision.values = TRUE))$decision.values
+
+# график для обучающей выборки
+par(mfrow = c(1, 2))
+rocplot(fitted, dat[train, "y"], main = "Training Data")
+# более гибкая модель (gamma выше)
+svmfit.flex = svm(y ~ ., data = dat[train, ], kernel = "radial", 
+                  gamma = 50, cost = 1, decision.values = T)
+fitted <- attributes(predict(svmfit.flex, dat[train, ], 
+                             decision.values = T))$decision.values
+rocplot(fitted, dat[train,"y"], add = T, col = "red")
+
+# график для тестовой выборки
+fitted <- attributes(predict(svmfit.opt, dat[-train, ], 
+                             decision.values = T))$decision.values
+rocplot(fitted, dat[-train, "y"], main = "Test Data")
+fitted <- attributes(predict(svmfit.flex, dat[-train, ], 
+                             decision.values = T))$decision.values
+rocplot(fitted, dat[-train, "y"], add = T, col = "red")
+
+
+detach(Auto)
+```
+
+Отчетливо видно, что ROC-кривые показывают нам достаточное количество неточных предсказаний. Я бы объяснил это тем, что 2 объясняющих переменных мало для установления связи с зависимой переменной. Также, точность предсказаний можно было бы увеличить, если уменьшить выборку наблюдений, избавившись, например, от аномальных значений.
