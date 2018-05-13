@@ -1,0 +1,101 @@
+---
+title: "laba10"
+author: "Semin A.S."
+date: '13 мая 2018 г '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Анализ главных компонент
+
+Средние значения и дисперсия каждого регрессора.
+
+```{r,echo=FALSE}
+library('MASS')  
+Cars93 <- Cars93[,-c(1,2,27)]
+df <- Cars93
+df$Type <- as.numeric(df$Type)
+df$MPG.highway <- as.numeric(df$MPG.highway)
+df$AirBags <- as.numeric(df$AirBags)
+df$DriveTrain <- as.numeric(df$DriveTrain)
+df$Cylinders <- as.numeric(df$Cylinders)
+df$Horsepower <- as.numeric(df$Horsepower)
+df$RPM <- as.numeric(df$RPM)
+df$Rev.per.mile <- as.numeric(df$Rev.per.mile)
+df$Man.trans.avail <- as.numeric(df$Man.trans.avail)
+df$Passengers <- as.numeric(df$Passengers)
+df$Length <- as.numeric(df$Length)
+df$Wheelbase <- as.numeric(df$Wheelbase)
+df$Width <- as.numeric(df$Width)
+df$Turn.circle <- as.numeric(df$Turn.circle)
+df$Luggage.room <- as.numeric(df$Luggage.room)
+df$Weight <- as.numeric(df$Weight)
+df$Origin <- as.numeric(df$Origin)
+df <- na.omit(df)
+apply(df, 2, mean)
+apply(df, 2, var)
+```
+
+Стоит отметить, что функция центрированных переменных выдает нам также средние значения каждого регрессора. По последнему графику видно, что нам достаточно 2 компонент. Они суммарно объясняют более 70% дисперсии.
+
+```{r,echo=FALSE}
+pr.out=prcomp(df, scale=TRUE)
+pr.out$center
+biplot(pr.out, scale=0)
+pr.out$rotation=-pr.out$rotation
+pr.out$x=-pr.out$x
+biplot(pr.out, scale=0)
+pr.var=pr.out$sdev^2
+pve=pr.var/sum(pr.var)
+plot(pve, xlab="Principal Component", ylab="Proportion of Variance Explained", ylim=c(0,1),type='b')
+plot(cumsum(pve), xlab="Principal Component", ylab="Cumulative Proportion of Variance Explained", ylim=c(0,1),type='b')
+```
+
+
+# Кластеризация
+
+# Кластеризация по методу К средних
+
+K=2. Разбиение на 2 кластеры мне не кажется наилучшим вариантом, так как некоторые значения из разных кластеров находятся почти впритирку.
+
+```{r,echo=FALSE}
+x=matrix(df$Type+df$Min.Price+df$Price+df$MPG.city+df$MPG.highway+df$AirBags+df$DriveTrain+df$Cylinders+df$EngineSize+df$Horsepower+df$RPM+df$Rev.per.mile+df$Man.trans.avail+df$Fuel.tank.capacity+df$Passengers+df$Length+df$Wheelbase+df$Width+df$Turn.circle+df$Rear.seat.room+df$Luggage.room+df$Weight+df$Origin)
+km.out=kmeans(x,2,nstart=1)
+km.out$cluster
+plot(x, col=(km.out$cluster+1), main="K-Means Clustering Results with K=2", xlab="", ylab="", pch=20, cex=2)
+```
+
+K=3. Разбиение на 3 кластера следует считать приемлемым. Стоит отметить, что при nstart больше 1, внутриклассовая дисперсия больше, чем при nstart=1.
+
+```{r,echo=FALSE}
+km.out=kmeans(x,3,nstart=1)
+plot(x, col=(km.out$cluster+1), main="K-Means Clustering Results with K=3", xlab="", ylab="", pch=20, cex=2)
+km.out=kmeans(x,3,nstart=1)
+km.out$tot.withinss
+km.out=kmeans(x,3,nstart=2)
+km.out$tot.withinss
+```
+
+# Иерархическая кластеризация
+
+Из 3 графиков четко видно, что в первом, где полное присоединение, кластеров меньше, поэтому используем этот метод.
+
+```{r,echo=FALSE}
+hc.complete=hclust(dist(x), method="complete")
+hc.average=hclust(dist(x), method="average")
+hc.single=hclust(dist(x), method="single")
+par(mfrow=c(1,3))
+plot(hc.complete,main="Complete Linkage", xlab="", sub="", cex=.9)
+plot(hc.average, main="Average Linkage", xlab="", sub="", cex=.9)
+plot(hc.single, main="Single Linkage", xlab="", sub="", cex=.9)
+xsc=scale(x)
+par(mfrow=c(1,1))
+plot(hclust(dist(xsc), method="complete"), main="Hierarchical Clustering with Scaled Features", xlab="", sub="")
+```
+
+
+
